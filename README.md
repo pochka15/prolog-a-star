@@ -18,6 +18,10 @@
 - **node**(State, Action, PreviousState, ActualCost, FCost)\
     FCost - ocena według funkcji f
 
+## Some graph visualizations of function calls and facts
+
+- [Diagrams.net](https://drive.google.com/file/d/1jFAwxYKgoOpynddCwh-978AElifYfKYl/view?usp=sharing)
+
 ## Auxillary information
 
 ### How to run the code in the vscode
