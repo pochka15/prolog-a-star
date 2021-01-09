@@ -16,12 +16,13 @@ search_A_star(Queue, ClosedSet, PathCost, N, Step, MaxStep) :-
     format('~nCurrent step: ~w,~nFeasible steps: ~w~n', [Step, MaxStep]), nl,
     should_increase_limit,
     NewMaxStep is MaxStep + 1,
-    search_A_star(Queue, ClosedSet, Path, N, Step, NewMaxStep).
+    search_A_star(Queue, ClosedSet, PathCost, N, Step, NewMaxStep).
 
 
-continue(node(State, Action, Parent, Cost, _ ) , _  ,  ClosedSet,
-		path_cost(Path, Cost) , N , Step, MaxStep) :-
-	        goal( State), ! ,
+% continue(Node, RestQueue, ClosedSet, PathCost, N, Step, MaxStep).
+continue(node(State, Action, Parent, Cost, _ ),
+         _, ClosedSet, path_cost(Path, Cost) , _, _, _) :-
+	        goal(State), ! ,
 	        build_path(node(Parent, _ ,_ , _ , _ ) , ClosedSet, [Action/State], Path).
 
 continue(Node, RestQueue, ClosedSet, Path, N, Step, MaxStep) :-
@@ -45,10 +46,11 @@ fetch_node(node(State, Action,Parent, Cost, Score),
 
 /* gdy węzeł jest już przetowrzony, to rekurencyjnie szukamy dalej w kolejce,
 zwraca węzeł */
-fetch_node(Node, [node(State, Action,Parent, Cost, Score) | RestQueue],
+fetch_node(Node, [node(State, _, _, _, _) | RestQueue],
             ClosedSet, NewQueue, N) :-
                 N >= 1,
                 member(node(State, _, _, _, _), ClosedSet),
+                !,
                 fetch_node(Node, RestQueue, ClosedSet, NewQueue, N).
 
 /* wymuszenie dekrementacji n */
@@ -59,27 +61,61 @@ fetch_node(Node, [_ | RestQueue],
                 fetch_node(Node, RestQueue, ClosedSet, NewQueue, M).
 
 
-/* gdy n == 1 to zwróć pierwszy element z kolejki */
-fetch_nth_node(node(State, Action, Parent, Cost, Score),
-            [node(State, Action,Parent, Cost, Score) | RestQueue],
-            ClosedSet, RestQueue, 1).
+% gdy n == 1 to zwróć pierwszy element z kolejki
+fetch_nth_node_non_existing_in_closedset(
+        node(State, Action, PreviousState, ActualCost, FCost), % fetched node
+        [node(State, Action, PreviousState, ActualCost, FCost) | RestQueue], % queue
+        ClosedSet,
+        RestQueue, % out queue
+        1) :- % N
+    not(member(node(State, _, _, _, _), ClosedSet)).
 
-/* gdy N jest > 1 szukaj tego węzła głębiej */
-fetch_nth_node(Node,
-            [node(State, Action,Parent, Cost, Score) | RestQueue],
-            ClosedSet, 
-            [node(State, Action,Parent, Cost, Score) | NewQueue], N) :- 
-                N > 1,
-                M is N - 1,
-                fetch_nth_node(Node, RestQueue, ClosedSet, NewQueue, M).
 
-/* wybierz węzeł na który wskazuje pierwszy element z listy wyboru */
-fetch_node_using_choice_list(Node, [N | _], Queue, ClosedSet, RestQueue) :-
-    fetch_nth_node(Node, Queue, ClosedSet, RestQueue, N).
+% gdy N jest > 1 przejdź do kolejnego węzła
+fetch_nth_node_non_existing_in_closedset(
+        FetchedNode,
+        [node(State, Action, PreviousState, ActualCost, FCost) | RestQueue], % queue
+        ClosedSet,
+        [node(State, Action, PreviousState, ActualCost, FCost) | InnerRestQueue], % out queue
+        N) :-
+    N > 1,
+    not(member(node(State, _, _, _, _), ClosedSet)),
+    DecrementedN is N - 1,
+    fetch_nth_node_non_existing_in_closedset(
+        FetchedNode, RestQueue, ClosedSet, InnerRestQueue, DecrementedN).
 
-/*kolejny element z listy wyboru przy nawrocie */
-fetch_node_using_choice_list(Node, [_ | RestChoiceList], Queue, ClosedSet, RestQueue) :-
-    fetch_node_using_choice_list(Node, RestChoiceList, Queue, ClosedSet, RestQueue).
+
+% gdy N jest > 1 i obecny węzeł jest w closedSet, pomiń go
+fetch_nth_node_non_existing_in_closedset(
+        FetchedNode, % fetched node
+        [node(State, Action, PreviousState, ActualCost, FCost) | RestQueue], % queue
+        ClosedSet,
+        [node(State, Action, PreviousState, ActualCost, FCost) | InnerRestQueue], % out queue
+        N) :-
+    N > 1,
+    member(node(State, _, _, _, _), ClosedSet),
+    fetch_nth_node_non_existing_in_closedset(
+        FetchedNode, RestQueue, ClosedSet, InnerRestQueue, N).
+
+
+% Wybierz węzeł na który wskazuje pierwszy element z listy wyboru
+fetch_node_using_choice_list(OutNode,
+                             [N | _], % ChoiceList
+                             Queue,
+                             ClosedSet,
+                             QueueWithoutFetchedElement) :-
+    fetch_nth_node_non_existing_in_closedset(
+        OutNode, Queue, ClosedSet, QueueWithoutFetchedElement, N).
+
+
+% Nawrót: wywołaj rekurencyjne z kolejką bez pierwszego elementu
+fetch_node_using_choice_list(OutNode,
+                             [_ | RestChoiceList], % ChoiceList
+                             Queue,
+                             ClosedSet,
+                             QueueWithoutFetchedElement) :-
+    fetch_node_using_choice_list(
+      OutNode, RestChoiceList, Queue, ClosedSet, QueueWithoutFetchedElement).
 
 
 expand(node(State, _ ,_ , Cost, _ ), NewNodes)  :-
@@ -138,21 +174,28 @@ get_nodes_order(Order, Queue, ClosedSet, N) :-
     fetch_n_nodes(Nodes, Queue, ClosedSet, N),
     format('First ~w nodes from the queue:', [N]), nl, nl,
     write(Nodes), nl,
+    write('Enter the nodes order: '),
     read(Order).
 
 
     
-succ(a,ab,1,b).
-succ(b,bd,3,d).
-succ(a,ac,2,c).
-succ(d,de,4,e).
-succ(c,ce,5,e).
+goal(m).
 
-goal(e).
+succ(a, ab, 2, b).
+succ(b, bf, 3, f).
+succ(a, ac, 3, c).
+succ(b, bg, 4, g).
+succ(g, gm, 2, m).
+succ(c, cd, 2, d).
+succ(d, dm, 100, m).
+succ(d, dg, 2, g).
+succ(g, gc, 2, c).
+succ(c, cm, 3, m).
 
-hScore(a,7).
-hScore(b,5).
-hScore(c,3).
-hScore(d,2).
-hScore(e,0).
-
+hScore(a, 4).
+hScore(b, 4).
+hScore(f, 7).
+hScore(g, 1).
+hScore(m, 0).
+hScore(c, 3).
+hScore(d, 1).
